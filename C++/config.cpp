@@ -1,11 +1,22 @@
-#include "config.h"
 #include <fstream>
 #include <iterator>
 #include <vector>
 #include <stdio.h>
 
+
+#include "config.h"
+
 using namespace std;
 
+std::istream& operator>>(std::istream& is, ConfigPair& setting){
+	is >> setting.option >> setting.value;
+	return is;
+}
+
+std::ostream& operator<<(std::ostream& os, const ConfigPair& setting){
+	os << setting.option << "\t" << setting.value << std::endl;
+	return os;
+}
 
 void create_config(int t){
 	fstream cf;
@@ -15,7 +26,7 @@ void create_config(int t){
 	if(cf){
 		cf << "Time\t" << t << endl;
 	} else {
-		throw 1;
+		throw configOpenException();
 	}	
 
 	cf.close();
@@ -31,7 +42,7 @@ void edit_config(ConfigPair setting){
 	
 	cf.open(CONFIG,fstream::in);
 
-	if(!cf)	throw 1;
+	if(!cf)	throw configOpenException();
 
 	copy(istream_iterator<ConfigPair>(cf),
 		istream_iterator<ConfigPair>(),
@@ -42,7 +53,7 @@ void edit_config(ConfigPair setting){
 	//try {
 		cf.open(".temp",fstream::out);
 	
-		if(!cf) throw 2;
+		if(!cf) throw configEditException();
 		for(vector<ConfigPair>::iterator it = v.begin(); it != v.end(); ++it){
 			if(it->option == setting.option){
 				it->value = setting.value;
@@ -56,7 +67,7 @@ void edit_config(ConfigPair setting){
 		rename(".temp",CONFIG);
 	//} catch (){return -3;}
 	
-	if(!found) throw 3;
+	if(!found) throw configNotFoundException();
 	
 	return;
 }
@@ -66,7 +77,7 @@ void add_config(ConfigPair setting){
 	
 	cf.open(CONFIG,fstream::app);
 
-	if(!cf)	throw 1;
+	if(!cf)	throw configOpenException();
 
 	cf << setting.option << "\t" << setting.value << endl;
 
@@ -81,7 +92,7 @@ void rem_config(string option){
 	
 	cf.open(CONFIG,fstream::in);
 
-	if(!cf)	throw 1;
+	if(!cf)	throw configOpenException();
 
 	copy(istream_iterator<ConfigPair>(cf),
 		istream_iterator<ConfigPair>(),
@@ -89,24 +100,25 @@ void rem_config(string option){
 
 	cf.close();
 
-	//try {
-		cf.open(".temp",fstream::out);
-	
-		if(!cf) throw 2;
-		for(vector<ConfigPair>::iterator it = v.begin(); it != v.end(); ++it){
-			if(it->option == option){
-				found = 1;
-				continue;
-			}
-			cf << it->option << "\t" << it->value << endl;
-		}
-		cf.close();
+	cf.open(".temp",fstream::out);
 
+	if(!cf) throw configEditException();
+	for(vector<ConfigPair>::iterator it = v.begin(); it != v.end(); ++it){
+		if(it->option == option){
+			found = 1;
+			continue;
+		}
+		cf << it->option << "\t" << it->value << endl;
+	}
+	cf.close();
+
+	if(found){
 		remove(CONFIG);
 		rename(".temp",CONFIG);
-	//} catch (){return -3;}
-	
-	if(!found) throw 3;
+	} else {
+		remove(".temp");
+		throw configNotFoundException();
+	}
 	
 	return;
 
@@ -119,7 +131,7 @@ double read_config(string option){
 	
 	cf.open(CONFIG,fstream::in);
 
-	if(!cf) throw 1;
+	if(!cf) throw configOpenException();
 
 	copy(istream_iterator<ConfigPair>(cf),
 		istream_iterator<ConfigPair>(),
@@ -128,13 +140,12 @@ double read_config(string option){
 	cf.close();
 
 	for(vector<ConfigPair>::iterator it = v.begin(); it != v.end(); ++it)
-		if(it->option == setting->option){
-			setting->value = it->value;
+		if(it->option == option){
 			cf.close();
-			return 0;
+			return it->value;
 		}
 
 	cf.close();
-	throw 3;
+	throw configEditException();
 }
 

@@ -2,16 +2,25 @@
 #include <stdlib.h>
 #include <thread>
 #include <mutex> 
+#include <condition_variable>
 #include <csignal>
-#include "config.h"
 #include <string>
+#include <iostream>
+#include <sstream>
+#include <iomanip>
+#include <algorithm>
+#include <iterator>
+#include <vector>
 #include <unistd.h>
 #include <sys/types.h>
 #include <errno.h>
 #include <chrono>
+#include <ctime>
 #include <sys/wait.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+
+#include "config.h"
 
 using namespace std;
 /*
@@ -20,14 +29,18 @@ typedef struct {
 } ffmpeg_manager_struct;
 */
 
+extern int errno;
+
 
 mutex config_mutex;
 mutex t_mutex;
 mutex proc_mutex;
 mutex stop_mutex;
+condition_variable stop_cv;
 
+time_t last_checked;
 pid_t ffmpeg_proc = -1;
-stop = 0;
+int stop = 0;
 
 
 /*
@@ -48,6 +61,10 @@ void catch_SIGUSR(int signo) {
 	else
 		stop = 1 - stop;
 		
+	stop_cv.notify_one();
+		
+	cout << "Stop = " << stop << endl;
+	
 	stop_mutex.unlock();
 	proc_mutex.unlock();
 }
@@ -61,58 +78,115 @@ int setup_camera(){
 }
 
 // Function from which thread manages the ffmpeg process
-void *ffmpeg_process_manager(void *args){
-	string ffmpeg_cmd;
+void ffmpeg_process_manager(int t){
+	int status = 0;
+	string ffmpeg_cmd[] = {"/usr/bin/ffmpeg","-y","-i","/dev/video1","-s","1280x720",
+		"-vcodec","copy","-t",to_string(t),"",
+		"-t",to_string(t),"-vf", "fps=1/5",
+		"-update","1","frame.jpg"};
 	time_t rawt;
 	pid_t pid;
 	struct tm *lt;	
-	ffmpeg_manager_struct *fms = args;
-	int t = fms->t;
+	struct stat config_stat;
 
-	free(args);
-	
 	while(1){
-		// TODO: Check config has been updated
+		unique_lock<mutex> stop_lock(stop_mutex);
+		while(stop)
+			stop_cv.wait(stop_lock);
+		stop_lock.unlock();
+
+		// Check config hasn't been modified
+		if(stat(CONFIG,&config_stat)<0){
+			perror("Error using stat");
+		} else {
+			if(difftime(config_stat.st_mtime,last_checked)>0){
+				last_checked = config_stat.st_mtime;
+				try{
+					t = read_config("Time") * 60;
+				} catch (const configNotFoundException& e){
+					cout << "Error: " << e.what() << " - Time" << endl;
+					cout << "Using previous value Time=" << t << endl;
+				} catch (const exception& e){
+					cout << e.what() << endl;
+					exit(1);
+				}
+				setup_camera();
+			}
+		}
+
+
 
 		time(&rawt);
 		lt = localtime(&rawt);
-		//char *ffmpeg_args[] = {"
-		sprintf(ffmpeg_cmd,"ffmpeg -i /dev/video1 -s 1280x720 " 
-			"-vcodec copy -t %d %d-%02d-%02d_%02d:%02d:%02d.flv "
-			"-vcodec copy -t %d -r 1/5 -f image2 "
-			"-update 1 frame.jpg "
-//			"> /dev/null 2>&1"
-			,t, lt->tm_year+1900,lt->tm_mon+1,lt->tm_mday,
-			lt->tm_hour,lt->tm_min,lt->tm_sec,t);
+		ostringstream sStream;
+		sStream << lt->tm_year+1900 << "-";
+		sStream	<< setfill('0') << setw(2)
+			<< lt->tm_mon+1 << "-";
+		sStream	<< setfill('0') << setw(2)
+			<< lt->tm_mday << "_";
+		sStream	<< setfill('0') << setw(2)
+			<< lt->tm_hour << ":";
+		sStream	<< setfill('0') << setw(2)
+			<< lt->tm_min << ":";
+		sStream	<< setfill('0') << setw(2)
+			<< lt->tm_sec << ".flv";
+
+		string filename = sStream.str();		
+
+		// rewrite time and filename
+		ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(t);
+		ffmpeg_cmd[10] = filename;
+
+		// Convert to char* for execv
+		vector<char*> cmd_v;
+
+		// add null terminators
+		transform(begin(ffmpeg_cmd),end(ffmpeg_cmd),
+			back_inserter(cmd_v),
+			[](string& s){ s.push_back(0); return &s[0];});
+		cmd_v.push_back(nullptr);
+
+		char** c_cmd = cmd_v.data();
 
 		if (!(pid=fork())) {
+			cout << "shild" << endl;
 			int dev_null = open("/dev/null",O_WRONLY);
 			if(dev_null < 0){
 				perror("Error opening dev/null");
 				exit(1);
 			}
 			
-			if(dup2(dev_null,STDOUT_FILENO) < 0){
-				perror("Error in dup2");
-				exit(1);
-			}
+			//if(dup2(dev_null,STDOUT_FILENO) < 0){
+			//	perror("Error in dup2");
+			//	exit(1);
+			//}
 
 			close(dev_null);
 
-			system(ffmpeg_cmd);
+			if(execv("/usr/bin/ffmpeg",c_cmd) < 0){
+				perror("Error execv");
+				exit(1);
+			}
 			exit(0);
 		} else {
-			pthread_mutex_lock(&proc_mutex);
+			proc_mutex.lock();
 			ffmpeg_proc = pid;
-			pthread_mutex_unlock(&proc_mutex);
+			proc_mutex.unlock();
 
-			wait(NULL);
+			wait(&status);
 
-			pthread_mutex_lock(&proc_mutex);
+			proc_mutex.lock();
 			ffmpeg_proc = -1;
-			pthread_mutex_unlock(&proc_mutex);
+			proc_mutex.unlock();
 
-			strcpy(ffmpeg_cmd,"\0");
+			if(WIFEXITED(status))
+				if(WEXITSTATUS(status) > 0){
+				cout << "Ffmpeg Error, please check camera is attached" << endl;
+				cout << "Run ffmpeg natively to debug" << endl;
+				stop_mutex.lock();
+				stop = 1;
+				stop_mutex.unlock();
+				}
 		}
 	}
 	
@@ -123,58 +197,69 @@ int main(int argc, char *argv[]){
 	double t = 15;
 	int new_t = 0;
 	string str;
-	pthread_t manager;
+	struct stat config_stat;
 
 	if (argc > 1){
 		t = strtod(argv[1],NULL);
 		new_t = 1;
 	}
+	
+	ConfigPair toSave;
+	toSave.option = "Time"; toSave.value = t;
 
 	config_mutex.lock();
-	if ((config = fopen(config_path,"r")) == NULL){
-		if(errno == ENOENT){
-			printf("Creating new config file\n");
-			config = create_config(config_path,t);
-		} else {
-			perror("Error accessing config file");
-			exit(1);
-		}
-	} else {
-		if(new){
-			if(edit_config(config,"Time",t) < 0)
-				exit(1);
-		} else {
-			while(strcmp(str,"Time")){
-				fscanf(config,"%s\t%lf",str,&t);
-				printf("%s\t%lf\n",str,t);	
-			}
-			rewind(config);
-		}
-		
+
+	try {
+		if(new_t)
+			edit_config(toSave); 
+		else
+			t = read_config("Time");
+
+	} catch (const configOpenException& e){
+		create_config(t);
+	} catch (const configNotFoundException& e){
+		cout << "Error: " << e.what() << " - Time" << endl;
+		cout << "Adding Time as " << t;
+		add_config(toSave);
+	} catch (const exception& e){
+		cout << e.what() << endl;
+		exit(1);
 	}
-
-	fclose(config);
 	
-	pthread_mutex_unlock(&config_mutex);
+	toSave.option = "pid"; toSave.value = getpid();
 
-	if (signal(SIGUSR1,catch_USRSIG1) == SIG_ERR)
-		perror("Error setting USRSIG1");
-
-	t *= 60;
-
-	ffmpeg_manager_struct *args = malloc(sizeof *args);
-	args->t = t;
-
-
-	if(pthread_create(&manager,NULL,ffmpeg_process_manager,args)){
-		perror("Error creating manager thread");
-		free(args);
+	try {
+		edit_config(toSave); 
+	} catch (const configNotFoundException& e){
+		add_config(toSave);
+	} catch (const exception& e){
+		cout << e.what() << endl;
 		exit(1);
 	}
 
-	// Posibly do things here
-	pthread_join(manager,NULL);
+	config_mutex.unlock();
 
+	if (signal(SIGUSR1,catch_SIGUSR) == SIG_ERR)
+		perror("Error setting USRSIG1");
+
+	if (signal(SIGUSR2,catch_SIGUSR) == SIG_ERR)
+		perror("Error setting USRSIG2");
+
+	t *= 60;
+
+	if(stat(CONFIG,&config_stat)<0){
+		perror("Error in stat");
+		exit(1);
+	}
+
+	last_checked = config_stat.st_mtime;
+
+	thread manager(ffmpeg_process_manager,t);
+
+	// Posibly do things here
+
+	manager.join();
+	
 
 	return 0;
 }

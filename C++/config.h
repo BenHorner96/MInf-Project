@@ -1,27 +1,43 @@
+#ifndef CONFIG_H
+#define CONFIG_H
+
 #include <iostream>
 
 #define CONFIG ".config"
 
-using namespace std;
+
+class configOpenException : public std::exception {
+	public :
+		virtual const char* what() const throw() {
+			return "Could not open config file";
+		}
+}; 
+
+class configEditException : public std::exception {
+	public:
+		virtual const char* what() const throw() {
+			return "Could not open temporary file for editing config file";
+		}
+}; 
+
+class configNotFoundException : public std::exception {
+	public:
+		virtual const char* what() const throw() {
+			return "Could not find option in config file";
+		}
+}; 
 
 struct ConfigPair {
-	string option;
+	std::string option;
 	double value;
 };
 
-istream& operator>>(istream& is, ConfigPair& setting){
-	is >> setting.option >> setting.value;
-	return is;
-}
 
-ostream& operator<<(ostream& os, const ConfigPair& setting){
-	os << setting.option << "\t" << setting.value << endl;
-	return os;
-}
 
-void create_config(void);
+void create_config(int t);
 void edit_config(ConfigPair setting);
 void add_config(ConfigPair setting);
-void rem_config(string option);
-double read_config(string setting);
+void rem_config(std::string option);
+double read_config(std::string setting);
 
+#endif
