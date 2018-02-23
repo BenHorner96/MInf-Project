@@ -25,6 +25,20 @@ void create_config(int t){
 
 	if(cf){
 		cf << "Time\t" << t << endl;
+		cf << "Brightness\t0" << endl;
+		cf << "Contrast\t32" << endl;
+		cf << "Saturation\t64" << endl;
+		cf << "Hue\t0" << endl;
+		cf << "White_balance_temperature_auto\t1" << endl;
+		cf << "Gamma\t0" << endl;
+		cf << "Gain\t0" << endl;
+		cf << "Power_line_frequency\t1" << endl;
+		cf << "White_balance_temperature\t4600" << endl;
+		cf << "Sharpness\t3" << endl;
+		cf << "Backlight_compensation\t1" << endl;
+		cf << "Exposure_auto\t3" << endl;
+		cf << "Exposure_absolute\t156" << endl;
+		cf << "Exposure_auto_priority\t0" << endl;
 	} else {
 		throw configOpenException();
 	}	

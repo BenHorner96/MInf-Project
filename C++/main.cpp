@@ -74,7 +74,54 @@ void catch_SIGUSR(int signo) {
 // Set camera parameters when changed in config file
 // TODO
 int setup_camera(){
+	config_mutex.lock();
+
+	try {
+		int brightness = read_config("Brightness");
+		int contrast = read_config("Contrast");
+		int saturation = read_config("Saturation");
+		int hue = read_config("Hue");
+		int wbta = read_config("White_balance_temperature_auto");
+		int gamma = read_config("Gamma");
+		int gain = read_config("Gain");
+		int plf = read_config("Power_line_frequency");
+		int wbt = read_config("White_balance_temperature");
+		int sharpness = read_config("Sharpness");
+		int backlight_comp = read_config("Backlight_Compensation");
+		int ex_auto = read_config("Exposure_auto");
+		int ex_abs = read_config("Exposure_absolute");
+		int exp_auto_prio = read_config("Exposure_auto_priority");
+	
+		ostringstream sStream;
+	
+		sStream << "v4l2-ctl -c brightness="<< brightness 
+			<< " -c contrast=" << contrast
+			<< " -c saturation=" << saturation
+			<< " -c hue=" << hue
+			<< " -c white_balance_temperature_auto=" << wbta
+			<< " -c gamma=" << gamma  
+			<< " -c gain=" << gain
+			<< " -c power_line_frequency=" << plf  
+			<< " -c white_balance_temperature=" << wbt
+			<< " -c sharpness=" << sharpness
+			<< " -c backlight_compensation=" << backlight_comp  
+			<< " -c exposure_auto=" << ex_auto
+			<< " -c exposure_absolute=" << ex_abs
+			<< " -c exposure_auto_priority=" << exp_auto_prio;
+		
+		string tmp = sStream.str();
+		const char * cmd = tmp.c_str();
+	
+		cout << tmp;
+	
+		system(cmd);
+	} catch (...) {
+		return -1;
+	}
+
+	config_mutex.unlock(); 
 	return 0;
+
 }
 
 // Function from which thread manages the ffmpeg process
@@ -83,7 +130,9 @@ void ffmpeg_process_manager(int t){
 	string ffmpeg_cmd[] = {"/usr/bin/ffmpeg","-y","-i","/dev/video1","-s","1280x720",
 		"-vcodec","copy","-t",to_string(t),"",
 		"-t",to_string(t),"-vf", "fps=1/5",
-		"-update","1","frame.jpg"};
+		"-update","1","frame.jpg",
+		"-vcodec","copy","-t",to_string(t),"f","flv","rtmp:/mousehotelserver@mousehotelserver.inf.ac.uk::8080/live"};
+		
 	time_t rawt;
 	pid_t pid;
 	struct tm *lt;	
@@ -110,7 +159,7 @@ void ffmpeg_process_manager(int t){
 					cout << e.what() << endl;
 					exit(1);
 				}
-				setup_camera();
+				//setup_camera();
 			}
 		}
 
@@ -149,19 +198,18 @@ void ffmpeg_process_manager(int t){
 		char** c_cmd = cmd_v.data();
 
 		if (!(pid=fork())) {
-			cout << "shild" << endl;
 			int dev_null = open("/dev/null",O_WRONLY);
 			if(dev_null < 0){
 				perror("Error opening dev/null");
 				exit(1);
 			}
 			
-			//if(dup2(dev_null,STDOUT_FILENO) < 0){
-			//	perror("Error in dup2");
-			//	exit(1);
-			//}
+			if(dup2(dev_null,STDOUT_FILENO) < 0){
+				perror("Error in dup2");
+				exit(1);
+			}
 
-			close(dev_null);
+			//close(dev_null);
 
 			if(execv("/usr/bin/ffmpeg",c_cmd) < 0){
 				perror("Error execv");
@@ -238,6 +286,11 @@ int main(int argc, char *argv[]){
 	}
 
 	config_mutex.unlock();
+
+	//if (setup_camera() < 0) {
+	//	perror("Error setting up camera");
+	//	exit(1);
+	//}
 
 	if (signal(SIGUSR1,catch_SIGUSR) == SIG_ERR)
 		perror("Error setting USRSIG1");
