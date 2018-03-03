@@ -7,6 +7,7 @@
 #include <string>
 #include <iostream>
 #include <sstream>
+#include <map>
 #include <iomanip>
 #include <algorithm>
 #include <iterator>
@@ -72,54 +73,32 @@ void catch_SIGUSR(int signo) {
 
 
 // Set camera parameters when changed in config file
-// TODO
 int setup_camera(){
 	config_mutex.lock();
 
 	try {
-		int brightness = read_config("Brightness");
-		int contrast = read_config("Contrast");
-		int saturation = read_config("Saturation");
-		int hue = read_config("Hue");
-		int wbta = read_config("White_balance_temperature_auto");
-		int gamma = read_config("Gamma");
-		int gain = read_config("Gain");
-		int plf = read_config("Power_line_frequency");
-		int wbt = read_config("White_balance_temperature");
-		int sharpness = read_config("Sharpness");
-		int backlight_comp = read_config("Backlight_Compensation");
-		int ex_auto = read_config("Exposure_auto");
-		int ex_abs = read_config("Exposure_absolute");
-		int exp_auto_prio = read_config("Exposure_auto_priority");
-	
+		map<string,double> cam_settings = camera_config();	
+
+		config_mutex.unlock();
 		ostringstream sStream;
+
+		sStream << "v4l2-ctl";
+
+		for (auto& setting : cam_settings)
+			sStream << " -c " << setting.first << "=" << (int)setting.second;
 	
-		sStream << "v4l2-ctl -c brightness="<< brightness 
-			<< " -c contrast=" << contrast
-			<< " -c saturation=" << saturation
-			<< " -c hue=" << hue
-			<< " -c white_balance_temperature_auto=" << wbta
-			<< " -c gamma=" << gamma  
-			<< " -c gain=" << gain
-			<< " -c power_line_frequency=" << plf  
-			<< " -c white_balance_temperature=" << wbt
-			<< " -c sharpness=" << sharpness
-			<< " -c backlight_compensation=" << backlight_comp  
-			<< " -c exposure_auto=" << ex_auto
-			<< " -c exposure_absolute=" << ex_abs
-			<< " -c exposure_auto_priority=" << exp_auto_prio;
-		
 		string tmp = sStream.str();
 		const char * cmd = tmp.c_str();
 	
-		cout << tmp;
-	
 		system(cmd);
-	} catch (...) {
+	} catch (const configNotFoundException& e) {
+		cout << "Error: Not all camera parameters in config file" << endl;
 		return -1;
-	}
+	} catch (const exception& e){
+		cout << "Error: " << e.what() << endl; 
+		return -1;
+	} 
 
-	config_mutex.unlock(); 
 	return 0;
 
 }
@@ -287,10 +266,10 @@ int main(int argc, char *argv[]){
 
 	config_mutex.unlock();
 
-	//if (setup_camera() < 0) {
-	//	perror("Error setting up camera");
-	//	exit(1);
-	//}
+	if (setup_camera() < 0) {
+		perror("Error setting up camera");
+		exit(1);
+	}
 
 	if (signal(SIGUSR1,catch_SIGUSR) == SIG_ERR)
 		perror("Error setting USRSIG1");

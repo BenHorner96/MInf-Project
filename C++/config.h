@@ -2,6 +2,7 @@
 #define CONFIG_H
 
 #include <iostream>
+#include <map>
 
 #define CONFIG ".config"
 
@@ -39,5 +40,6 @@ void edit_config(ConfigPair setting);
 void add_config(ConfigPair setting);
 void rem_config(std::string option);
 double read_config(std::string setting);
+std::map<std::string,double> camera_config();
 
 #endif
