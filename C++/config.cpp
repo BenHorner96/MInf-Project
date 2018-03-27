@@ -82,7 +82,7 @@ void edit_config(ConfigPair setting){
 		rename(".temp",CONFIG);
 	//} catch (){return -3;}
 	
-	if(!found) throw configNotFoundException();
+	if(!found) throw configNotFoundException(setting.option);
 	
 	return;
 }
@@ -132,7 +132,7 @@ void rem_config(string option){
 		rename(".temp",CONFIG);
 	} else {
 		remove(".temp");
-		throw configNotFoundException();
+		throw configNotFoundException(option);
 	}
 	
 	return;
@@ -204,7 +204,7 @@ map<string,double> camera_config(){
 
 	for(auto& setting : cam_settings)
 		if(setting.second == -10000)
-			throw configNotFoundException();
+			throw configNotFoundException("");
 	
 
 	return cam_settings;
