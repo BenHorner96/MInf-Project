@@ -22,9 +22,14 @@ class configEditException : public std::exception {
 }; 
 
 class configNotFoundException : public std::exception {
+		std::string msg;
 	public:
+		configNotFoundException(const std::string& option)
+			: msg(std::string("Could not find option "+option+" in config file"))
+		{}
+
 		virtual const char* what() const throw() {
-			return "Could not find option in config file";
+			return msg.c_str();
 		}
 }; 
 

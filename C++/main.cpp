@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 
 #include "config.h"
+#include "spdlog/spdlog.h"
 
 using namespace std;
 /*
@@ -51,6 +52,8 @@ int stop = 0;
 ** video is finished (default).
 */ 
 void catch_SIGUSR(int signo) {
+	auto capture = spdlog::get("capture");
+	capture->info("Received SIGUSR, stopping ffmpeg process");
 	proc_mutex.lock();
 	stop_mutex.lock();
 	if(ffmpeg_proc > 0){
@@ -64,7 +67,7 @@ void catch_SIGUSR(int signo) {
 		
 	stop_cv.notify_one();
 		
-	cout << "Stop = " << stop << endl;
+	capture->info("Setting stop to " + stop);
 	
 	stop_mutex.unlock();
 	proc_mutex.unlock();
@@ -74,6 +77,7 @@ void catch_SIGUSR(int signo) {
 
 // Set camera parameters when changed in config file
 int setup_camera(){
+	auto capture = spdlog::get("capture");
 	config_mutex.lock();
 
 	try {
@@ -92,10 +96,10 @@ int setup_camera(){
 	
 		system(cmd);
 	} catch (const configNotFoundException& e) {
-		cout << "Error: Not all camera parameters in config file" << endl;
+		capture->error("Not all camera parameters in config file");
 		return -1;
 	} catch (const exception& e){
-		cout << "Error: " << e.what() << endl; 
+		capture->error(e.what()); 
 		return -1;
 	} 
 
@@ -105,12 +109,13 @@ int setup_camera(){
 
 // Function from which thread manages the ffmpeg process
 void ffmpeg_process_manager(int t){
+	auto capture = spdlog::get("capture");
 	int status = 0;
 	string ffmpeg_cmd[] = {"/usr/bin/ffmpeg","-y","-i","/dev/video1","-s","1280x720",
 		"-vcodec","copy","-t",to_string(t),"",
 		"-t",to_string(t),"-vf", "fps=1/5",
-		"-update","1","frame.jpg",
-		"-vcodec","copy","-t",to_string(t),"f","flv","rtmp:/mousehotelserver@mousehotelserver.inf.ac.uk::8080/live"};
+		"-update","1","../Network/frame.jpg",
+		"-vcodec","copy","-t",to_string(t),"-f","flv","rtmp://mousehotelserver.inf.ed.ac.uk::8080/live/test"};
 		
 	time_t rawt;
 	pid_t pid;
@@ -125,17 +130,17 @@ void ffmpeg_process_manager(int t){
 
 		// Check config hasn't been modified
 		if(stat(CONFIG,&config_stat)<0){
-			perror("Error using stat");
+			capture->warn("Error using stat to check last access of config file");
 		} else {
 			if(difftime(config_stat.st_mtime,last_checked)>0){
 				last_checked = config_stat.st_mtime;
 				try{
 					t = read_config("Time") * 60;
 				} catch (const configNotFoundException& e){
-					cout << "Error: " << e.what() << " - Time" << endl;
-					cout << "Using previous value Time=" << t << endl;
+					capture->warn(e.what());
+					capture->info("Using previous value of " + t);
 				} catch (const exception& e){
-					cout << e.what() << endl;
+					capture->error(e.what());
 					exit(1);
 				}
 				//setup_camera();
@@ -147,6 +152,7 @@ void ffmpeg_process_manager(int t){
 		time(&rawt);
 		lt = localtime(&rawt);
 		ostringstream sStream;
+		sStream << "Video/";
 		sStream << lt->tm_year+1900 << "-";
 		sStream	<< setfill('0') << setw(2)
 			<< lt->tm_mon+1 << "-";
@@ -161,6 +167,7 @@ void ffmpeg_process_manager(int t){
 
 		string filename = sStream.str();		
 
+		capture->info("Filename set as " + filename);
 		// rewrite time and filename
 		ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(t);
 		ffmpeg_cmd[10] = filename;
@@ -177,21 +184,25 @@ void ffmpeg_process_manager(int t){
 		char** c_cmd = cmd_v.data();
 
 		if (!(pid=fork())) {
-			int dev_null = open("/dev/null",O_WRONLY);
-			if(dev_null < 0){
-				perror("Error opening dev/null");
+			int out_file = open("ffmpeg.log",O_RDWR|O_CREAT|O_TRUNC,0666);
+			if(out_file < 0){
+				capture->error("Error opening ffmpeg.log");
 				exit(1);
 			}
 			
-			if(dup2(dev_null,STDOUT_FILENO) < 0){
-				perror("Error in dup2");
+			if(dup2(out_file,STDOUT_FILENO) < 0){
+				capture->error("Error using dup2 to redirect stdout of ffmpeg process to ffmpeg.log");
+				exit(1);
+			}
+			if(dup2(out_file,STDERR_FILENO) < 0){
+				capture->error("Error using dup2 to redirect stderr of ffmpeg process to ffmpeg.log");
 				exit(1);
 			}
 
-			//close(dev_null);
 
+			capture->info("Executing ffmpeg");
 			if(execv("/usr/bin/ffmpeg",c_cmd) < 0){
-				perror("Error execv");
+				capture->error("Error using execv to start ffmpeg");
 				exit(1);
 			}
 			exit(0);
@@ -206,13 +217,15 @@ void ffmpeg_process_manager(int t){
 			ffmpeg_proc = -1;
 			proc_mutex.unlock();
 
+			capture->info("Recording complete");
+
 			if(WIFEXITED(status))
 				if(WEXITSTATUS(status) > 0){
-				cout << "Ffmpeg Error, please check camera is attached" << endl;
-				cout << "Run ffmpeg natively to debug" << endl;
-				stop_mutex.lock();
-				stop = 1;
-				stop_mutex.unlock();
+					capture->warn("Ffmpeg returned with an error, stopping recording");
+					capture->warn("Run ffmpeg natively to debug");
+					stop_mutex.lock();
+					stop = 1;
+					stop_mutex.unlock();
 				}
 		}
 	}
@@ -225,10 +238,31 @@ int main(int argc, char *argv[]){
 	int new_t = 0;
 	string str;
 	struct stat config_stat;
+    	auto capture = spdlog::basic_logger_mt("capture","logs/capture.log");
 
 	if (argc > 1){
 		t = strtod(argv[1],NULL);
 		new_t = 1;
+	}
+
+
+	capture->info("Starting setup");
+
+
+	int out_file = open("logs/capture.log",O_RDWR|O_CREAT|O_TRUNC,0666);
+	if(out_file < 0){
+		capture->error("Error opening capture.log");
+		exit(1);
+	}
+
+	
+	if(dup2(out_file,STDOUT_FILENO) < 0){
+		capture->error("Error using dup2 to redirect stdout to capture.log");
+		exit(1);
+	}
+	if(dup2(out_file,STDERR_FILENO) < 0){
+		capture->error("Error using dup2 to redirect stderr to capture.log");
+		exit(1);
 	}
 	
 	ConfigPair toSave;
@@ -245,11 +279,11 @@ int main(int argc, char *argv[]){
 	} catch (const configOpenException& e){
 		create_config(t);
 	} catch (const configNotFoundException& e){
-		cout << "Error: " << e.what() << " - Time" << endl;
-		cout << "Adding Time as " << t;
+		capture->warn(e.what());
+		capture->info("Adding Time as " + to_string(t));
 		add_config(toSave);
 	} catch (const exception& e){
-		cout << e.what() << endl;
+		capture->error(e.what());
 		exit(1);
 	}
 	
@@ -260,35 +294,37 @@ int main(int argc, char *argv[]){
 	} catch (const configNotFoundException& e){
 		add_config(toSave);
 	} catch (const exception& e){
-		cout << e.what() << endl;
+		capture->error(e.what());
 		exit(1);
 	}
 
 	config_mutex.unlock();
 
-	if (setup_camera() < 0) {
-		perror("Error setting up camera");
-		exit(1);
-	}
+//	if (setup_camera() < 0) {
+//		capture->error("Error setting up camera");
+//		exit(1);
+//	}
 
 	if (signal(SIGUSR1,catch_SIGUSR) == SIG_ERR)
-		perror("Error setting USRSIG1");
+		capture->error("Error setting USRSIG1");
 
 	if (signal(SIGUSR2,catch_SIGUSR) == SIG_ERR)
-		perror("Error setting USRSIG2");
+		capture->error("Error setting USRSIG1");
 
 	t *= 60;
 
 	if(stat(CONFIG,&config_stat)<0){
-		perror("Error in stat");
+		capture->error("Error using stat to check last access of config file");
 		exit(1);
 	}
 
 	last_checked = config_stat.st_mtime;
 
+	capture->info("Setup complete, starting ffmpeg_process_manager thread");
+
 	thread manager(ffmpeg_process_manager,t);
 
-	// Posibly do things here
+	// Posibly do things here relating to image processing
 
 	manager.join();
 	

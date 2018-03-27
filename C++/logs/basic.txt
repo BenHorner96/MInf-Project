@@ -1,0 +1,2 @@
+[2018-03-27 18:00:42.322] [basic_logger] [info] Log log log
+[2018-03-27 18:00:49.358] [basic_logger] [info] Log log log
