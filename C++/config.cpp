@@ -25,7 +25,10 @@ void create_config(int t){
 	cf.open(CONFIG,fstream::out);
 
 	if(cf){
-		cf << "Time\t" << t << endl;
+		cf << "mode\t0" << endl;
+		cf << "time\t" << t << endl;
+		cf << "name\tNONE" << endl;
+		cf << "total_t\t0" << endl;
 		cf << "brightness\t0" << endl;
 		cf << "contrast\t32" << endl;
 		cf << "saturation\t64" << endl;
@@ -139,7 +142,7 @@ void rem_config(string option){
 
 }
 
-double read_config(string option){
+string read_config(string option){
 	vector<ConfigPair> v;
 		
 	fstream cf;
@@ -162,26 +165,26 @@ double read_config(string option){
 	throw configEditException();
 }
 
-map<string,double> camera_config(){
+map<string,string> camera_config(){
 	vector<ConfigPair> v;
 
-	map<string,double> cam_settings;
+	map<string,string> cam_settings;
 
 		
-	cam_settings["brightness"] = -10000;
-	cam_settings["contrast"] = -10000;
-	cam_settings["saturation"] = -10000;
-	cam_settings["hue"] = -10000;
-	cam_settings["white_balance_temperature_auto"] = -10000;
-	cam_settings["gamma"] = -10000;
-	cam_settings["gain"] = -10000;
-	cam_settings["power_line_frequency"] = -10000;
-	cam_settings["white_balance_temperature"] = -10000;
-	cam_settings["sharpness"] = -10000;
-	cam_settings["backlight_compensation"] = -10000;
-	cam_settings["exposure_auto"] = -10000;
-	cam_settings["exposure_absolute"] = -10000;
-	cam_settings["exposure_auto_priority"] = -10000;
+	cam_settings["brightness"] = "none";
+	cam_settings["contrast"] = "none";
+	cam_settings["saturation"] = "none";
+	cam_settings["hue"] = "none";
+	cam_settings["white_balance_temperature_auto"] = "none";
+	cam_settings["gamma"] = "none";
+	cam_settings["gain"] = "none";
+	cam_settings["power_line_frequency"] = "none";
+	cam_settings["white_balance_temperature"] = "none";
+	cam_settings["sharpness"] = "none";
+	cam_settings["backlight_compensation"] = "none";
+	cam_settings["exposure_auto"] = "none";
+	cam_settings["exposure_absolute"] = "none";
+	cam_settings["exposure_auto_priority"] = "none";
 		
 	fstream cf;
 	
@@ -195,7 +198,7 @@ map<string,double> camera_config(){
 
 	cf.close();
 
-	map<string,double>::iterator check;
+	map<string,string>::iterator check;
 
 	for(vector<ConfigPair>::iterator it = v.begin(); it != v.end(); ++it)
 		if((check = cam_settings.find(it->option)) != cam_settings.end()){
@@ -203,7 +206,7 @@ map<string,double> camera_config(){
 		}
 
 	for(auto& setting : cam_settings)
-		if(setting.second == -10000)
+		if(setting.second == "none")
 			throw configNotFoundException("");
 	
 

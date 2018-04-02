@@ -5,6 +5,9 @@
 #include <map>
 
 #define CONFIG ".config"
+#define DEFAULT_time 15
+#define DEFAULT_mode 0
+#define DEFAULT_name "NONE"
 
 
 class configOpenException : public std::exception {
@@ -35,7 +38,7 @@ class configNotFoundException : public std::exception {
 
 struct ConfigPair {
 	std::string option;
-	double value;
+	std::string value;
 };
 
 
@@ -44,7 +47,7 @@ void create_config(int t);
 void edit_config(ConfigPair setting);
 void add_config(ConfigPair setting);
 void rem_config(std::string option);
-double read_config(std::string setting);
-std::map<std::string,double> camera_config();
+std::string read_config(std::string setting);
+std::map<std::string,std::string> camera_config();
 
 #endif
