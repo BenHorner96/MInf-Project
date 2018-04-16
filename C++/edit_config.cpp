@@ -9,11 +9,13 @@
 
 using namespace std;
 
-int main(){
-	try {
-		pid_t proc = (pid_t)stoi(read_config("pid"));
+int main(int argc, char *argv[]){
 
-		kill(proc,SIGUSR1);
+	if (argc < 3)
+		exit(1);
+
+	try {
+		edit_config(argv[1],argv[2]);
 	} catch (const exception& e){
 		cout << e.what() << endl;
 		exit(1);
