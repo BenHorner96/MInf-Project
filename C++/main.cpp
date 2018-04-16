@@ -228,10 +228,6 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 
 		// Fork and child process will execute ffmpeg command
 		if (!(pid=fork())) {
-			proc_mutex.lock();
-			ffmpeg_proc = getpid();
-			proc_mutex.unlock();
-
 			int out_file = open("logs/ffmpeg.log",O_RDWR|O_CREAT|O_TRUNC,0666);
 			if(out_file < 0){
 				capture->error("Error opening ffmpeg.log");
@@ -260,6 +256,10 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 			}
 			exit(0);
 		} else {
+			proc_mutex.lock();
+			ffmpeg_proc = pid;
+			proc_mutex.unlock();
+
 
 			wait(&status);
 
