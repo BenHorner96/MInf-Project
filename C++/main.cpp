@@ -133,6 +133,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 					// Check mode
 					if (mode){
 						// Set stop = 1
+						capture->info("Setting stop to 1");
 						stop_mutex.lock();
 						stop = 1;
 						stop_mutex.unlock();
@@ -154,6 +155,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 						session_number = 0;
 
 						// Set stop = 1
+						capture->info("Setting stop to 1");
 						stop_mutex.lock();
 						stop = 1;
 						stop_mutex.unlock();
