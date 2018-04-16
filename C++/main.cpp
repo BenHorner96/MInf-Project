@@ -70,39 +70,6 @@ void catch_SIGUSR(int signo) {
 }
 
 
-
-// Set camera parameters
-int setup_camera(){
-	auto capture = spdlog::get("capture");
-	config_mutex.lock();
-
-	try {
-		map<string,string> cam_settings = camera_config();	
-
-		config_mutex.unlock();
-		ostringstream sStream;
-
-		sStream << "v4l2-ctl";
-
-		for (auto& setting : cam_settings)
-			sStream << " -c " << setting.first << "=" << setting.second;
-	
-		string tmp = sStream.str();
-		const char * cmd = tmp.c_str();
-	
-		system(cmd);
-	} catch (const configNotFoundException& e) {
-		capture->error("Not all camera parameters in config file");
-		return -1;
-	} catch (const exception& e){
-		capture->error(e.what()); 
-		return -1;
-	} 
-
-	return 0;
-
-}
-
 // Function from which thread manages the ffmpeg process
 void ffmpeg_process_manager(int video_time, int mode, string name, int experiment_time){
 	auto capture = spdlog::get("capture");
@@ -114,7 +81,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 	string ffmpeg_cmd[] = {"/usr/bin/ffmpeg","-y","-i","/dev/video1","-s","1280x720",
 		"-vcodec","copy","-t",to_string(video_time),"",
 		"-t",to_string(video_time),"-vf", "fps=1/5",
-		"-update","1","../Network/frame.jpg",
+		"-update","1","../snapshot.png",
 		"-vcodec","copy","-t",to_string(video_time),"-f","flv","rtmp://mousehotelserver.inf.ed.ac.uk::8080/live/test"};
 		
 	time_t rawt;
@@ -322,6 +289,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 				// If in mode 1 
 				// must track total recorded time
 				if (mode){
+					session_number += 1;
 					recorded_time += video_time;
 					if (recorded_time >= experiment_time){
 						capture->info("Experiment completed, stopping recording");
