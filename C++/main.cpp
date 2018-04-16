@@ -59,12 +59,12 @@ void catch_SIGUSR(int signo) {
 	else
 		stop = 1;
 		
-	stop_cv.notify_one();
-		
-	capture->info("Setting stop to " + stop);
-	
 	stop_mutex.unlock();
 	proc_mutex.unlock();
+		
+	capture->info("Setting stop to " + to_string(stop));
+	
+	stop_cv.notify_one();
 
 	capture->flush();
 }
