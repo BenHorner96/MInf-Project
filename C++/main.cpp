@@ -281,7 +281,6 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 				exit(1);
 			}
 
-			close(out_file);
 
 			// Execute command
 			capture->info("Executing ffmpeg");
@@ -374,7 +373,6 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 	
-	close(out_file);
 	
 	capture->flush();
 	config_mutex.lock();
