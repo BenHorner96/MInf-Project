@@ -452,7 +452,7 @@ int main(int argc, char *argv[]){
 	last_checked = config_stat.st_mtime;
 
 	// Set stop to 1 if mode is not 0
-	capture->info("Mode is "+to_string(mode)+", setting stop as same")
+	capture->info("Mode is "+to_string(mode)+", setting stop as same");
 	stop_mutex.lock();
 	stop = mode;
 	stop_mutex.unlock();
