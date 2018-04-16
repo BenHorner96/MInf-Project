@@ -65,6 +65,8 @@ void catch_SIGUSR(int signo) {
 	
 	stop_mutex.unlock();
 	proc_mutex.unlock();
+
+	capture->flush();
 }
 
 
@@ -120,6 +122,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 	struct stat config_stat;
 
 	while(1){
+		capture->flush();
 		unique_lock<mutex> stop_lock(stop_mutex);
 		while(stop)
 			stop_cv.wait(stop_lock);
@@ -130,6 +133,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 			capture->warn("Error using stat to check last access of config file");
 		} else {
 			if(difftime(config_stat.st_mtime,last_checked)>0){
+				capture->info("Modifcation of config detected");
 				// If it has then reload video_time, mode, name, and set camera params
 				int mode_prev = mode;
 				string name_prev = name;
@@ -245,6 +249,8 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 
 		char** c_cmd = cmd_v.data();
 
+		capture->flush();
+
 		// Check stop in case it was set during previous set up
 		stop_mutex.lock();
 		if (stop){
@@ -277,6 +283,8 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 
 			// Execute command
 			capture->info("Executing ffmpeg");
+			
+			capture->flush();
 			if(execv("/usr/bin/ffmpeg",c_cmd) < 0){
 				capture->error("Error using execv to start ffmpeg");
 				exit(1);
@@ -326,6 +334,8 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 				}
 			}
 		}
+		
+		capture->flush();
 	}
 	
 }
@@ -362,6 +372,7 @@ int main(int argc, char *argv[]){
 		exit(1);
 	}
 	
+	capture->flush();
 	config_mutex.lock();
 
 
@@ -443,6 +454,7 @@ int main(int argc, char *argv[]){
 	}
 
 	config_mutex.unlock();
+	capture->flush();
 
 
 	// Set to catch user signals
@@ -472,6 +484,7 @@ int main(int argc, char *argv[]){
 
 	capture->info("Setup complete, starting ffmpeg_process_manager thread");
 
+	capture->flush();
 	thread manager(ffmpeg_process_manager,video_time,mode,name, experiment_time);
 
 	// Space here for extensions od functionality`
