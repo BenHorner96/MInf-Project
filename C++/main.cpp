@@ -265,7 +265,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 			ffmpeg_proc = getpid();
 			proc_mutex.unlock();
 
-			int out_file = open("ffmpeg.log",O_RDWR|O_CREAT|O_TRUNC,0666);
+			int out_file = open("logs/ffmpeg.log",O_RDWR|O_CREAT|O_TRUNC,0666);
 			if(out_file < 0){
 				capture->error("Error opening ffmpeg.log");
 				exit(1);
@@ -281,6 +281,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 				exit(1);
 			}
 
+			close(out_file);
 
 			// Execute command
 			capture->info("Executing ffmpeg");
@@ -372,6 +373,8 @@ int main(int argc, char *argv[]){
 		capture->error("Error using dup2 to redirect stderr to stdout.log");
 		exit(1);
 	}
+
+	close(out_file);
 	
 	
 	capture->flush();
