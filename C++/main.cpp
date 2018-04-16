@@ -172,11 +172,12 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 
 				ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(video_time);
 
+				experiment_time *= 60;
+
 				if (experiment_time < video_time){
 					capture->warn("experiment_time in config is less than video_time, setting to video_time");
 					experiment_time = video_time;
-					edit_config("experiment_time",to_string(experiment_time));
-					experiment_time *= 60;
+					edit_config("experiment_time",to_string(experiment_time/60));
 				}
 
 			}
@@ -269,7 +270,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 			ffmpeg_proc = -1;
 			proc_mutex.unlock();
 
-			capture->info("Recording complete");
+			capture->info("Ffmpeg process reaped");
 
 			// Check that the process was terminated by a signal
 			// Assume if so that it was capture control
