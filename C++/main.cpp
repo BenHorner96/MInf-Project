@@ -25,17 +25,11 @@
 #include "spdlog/spdlog.h"
 
 using namespace std;
-/*
-typedef struct {
-	int t;
-} ffmpeg_manager_struct;
-*/
 
 extern int errno;
 
 
 mutex config_mutex;
-mutex t_mutex;
 mutex proc_mutex;
 mutex stop_mutex;
 condition_variable stop_cv;
@@ -47,7 +41,7 @@ int stop = 0;
 
 /*
 ** Catch USRSIG1 and kill current ffmpeg process.
-** Usually used when t has been changed in config file
+** Usually used when video_time has been changed in config file
 ** and you want immediate effect, rather than after current
 ** video is finished (default).
 */ 
@@ -63,7 +57,7 @@ void catch_SIGUSR(int signo) {
 	if(signo == SIGUSR1)
 		stop = 0;
 	else
-		stop = 1 - stop;
+		stop = 1;
 		
 	stop_cv.notify_one();
 		
@@ -75,7 +69,7 @@ void catch_SIGUSR(int signo) {
 
 
 
-// Set camera parameters when changed in config file
+// Set camera parameters
 int setup_camera(){
 	auto capture = spdlog::get("capture");
 	config_mutex.lock();
@@ -108,19 +102,21 @@ int setup_camera(){
 }
 
 // Function from which thread manages the ffmpeg process
-void ffmpeg_process_manager(int t, int mode, string name){
+void ffmpeg_process_manager(int video_time, int mode, string name, int experiment_time){
 	auto capture = spdlog::get("capture");
-	int status = 0; int total_t = -1;
-	int recorded_t = 0;
+	int status = 0;
+	int recorded_time = 0;
+	int session_number = 0;
+
+	// exec family require a list of arguments
 	string ffmpeg_cmd[] = {"/usr/bin/ffmpeg","-y","-i","/dev/video1","-s","1280x720",
-		"-vcodec","copy","-t",to_string(t),"",
-		"-t",to_string(t),"-vf", "fps=1/5",
+		"-vcodec","copy","-t",to_string(video_time),"",
+		"-t",to_string(video_time),"-vf", "fps=1/5",
 		"-update","1","../Network/frame.jpg",
-		"-vcodec","copy","-t",to_string(t),"-f","flv","rtmp://mousehotelserver.inf.ed.ac.uk::8080/live/test"};
+		"-vcodec","copy","-t",to_string(video_time),"-f","flv","rtmp://mousehotelserver.inf.ed.ac.uk::8080/live/test"};
 		
 	time_t rawt;
 	pid_t pid;
-	struct tm *lt;	
 	struct stat config_stat;
 
 	while(1){
@@ -134,88 +130,108 @@ void ffmpeg_process_manager(int t, int mode, string name){
 			capture->warn("Error using stat to check last access of config file");
 		} else {
 			if(difftime(config_stat.st_mtime,last_checked)>0){
-				// If it has then reload time, mode, name, and set camera params
-				config_mutex.lock();
+				// If it has then reload video_time, mode, name, and set camera params
+				int mode_prev = mode;
+				string name_prev = name;
+				
 				last_checked = config_stat.st_mtime;
+
+				config_mutex.lock();
 				try{
-					t = stoi(read_config("time")) * 60;
-					if(t < 1){
-						capture->warn("time in config is less than one, setting to default of 15");
-						t = 15;
-						ConfigPair toSave;
-						toSave.option = "time";
-						toSave.value = t;
-						edit_config(toSave);
-						t *= 60;
-					}
 
-					// If the mode changes, reset the recorded time
-					int mode_change = mode;
+					video_time = stoi(read_config("video_time")) * 60;
 					mode = stoi(read_config("mode"));
-
-					if (mode_change != mode)
-						recorded_t = 0;
-
 					name = read_config("name");
+					experiment_time = stoi(read_config("experiment_time"));
+
 
 				} catch (const configNotFoundException& e){
 					capture->warn(e.what());
-					capture->info("Using previous value of " + t);
+					capture->warn("Setting stop = 1");
+					
 				} catch (const exception& e){
 					capture->error(e.what());
 					exit(1);
 				}
 				config_mutex.unlock();
-				//setup_camera();
+
+				// Check mode changed
+				if (mode_prev != mode){
+					capture->info("Detecting mode change to " + to_string(mode));
+					
+					// Check mode
+					if (mode){
+						// Set stop = 1
+						stop_mutex.lock();
+						stop = 1;
+						stop_mutex.unlock();
+						continue;
+					} else {
+						// Reset session number and recorded time
+						recorded_time = 0;
+						session_number = 0;
+					}
+				}
+
+				// Check mode
+				if (mode){
+					// Check name changed
+					if (name_prev != name){
+						capture->info("Name changed detected, starting new experiment");
+						// Reset session number and recorded time
+						recorded_time = 0;
+						session_number = 0;
+
+						// Set stop = 1
+						stop_mutex.lock();
+						stop = 1;
+						stop_mutex.unlock();
+						continue;
+					}
+				}
+					
+				if (video_time < 1){
+					capture->warn("video_time in config is less than one, setting to default");
+					video_time = DEFAULT_video_time;
+					edit_config("video_time",to_string(video_time));
+					video_time *= 60;
+				}
+
+				ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(video_time);
+
+				if (experiment_time < video_time){
+					capture->warn("experiment_time in config is less than video_time, setting to video_time");
+					experiment_time = video_time;
+					edit_config("experiment_time",to_string(experiment_time));
+					experiment_time *= 60;
+				}
+
 			}
 		}
 
 		string filename;
 		// Get current time
 		time(&rawt);
-		lt = localtime(&rawt);
+		ostringstream sStream;
 	
+		sStream << "../video/";
+		sStream << rawt;
+		
 		if(mode){
-			// If the setting is mode 1 then read the config file for
-			// total time of session
-			// total_t == 0 means to record indefinitely
-			config_mutex.lock();
-			try {
-				if(total_t < 0)
-					total_t = stoi(read_config("total_t"));
-			} catch (const configNotFoundException& e) {
-				capture->error(e.what());
-				exit(1);
-			} catch (const exception& e){
-				capture->error(e.what()); 
-				exit(1);
-			} 
-			 
-			config_mutex.unlock();
+			// If the setting is mode 1 then append session number and name
 
-			// TODO: set filename	
-		} else {
-			ostringstream sStream;
-			sStream << "Video/";
-			sStream << lt->tm_year+1900 << "-";
-			sStream	<< setfill('0') << setw(2)
-				<< lt->tm_mon+1 << "-";
-			sStream	<< setfill('0') << setw(2)
-				<< lt->tm_mday << "_";
-			sStream	<< setfill('0') << setw(2)
-				<< lt->tm_hour << ":";
-			sStream	<< setfill('0') << setw(2)
-				<< lt->tm_min << ":";
-			sStream	<< setfill('0') << setw(2)
-				<< lt->tm_sec << ".flv";
+			sStream	<< "_";
+			sStream	<< setfill('0') << setw(6)
+				<< session_number;
+			sStream	<< "_" << name;
 			
-			filename = sStream.str();		
 		}
 
+		sStream << ".flv";
+		filename = sStream.str();		
 
 		capture->info("Filename set as " + filename);
-		// rewrite time and filename
-		ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(t);
+		// rewrite video_time and filename
 		ffmpeg_cmd[10] = filename;
 
 		// Convert to char* for execv
@@ -229,8 +245,20 @@ void ffmpeg_process_manager(int t, int mode, string name){
 
 		char** c_cmd = cmd_v.data();
 
+		// Check stop in case it was set during previous set up
+		stop_mutex.lock();
+		if (stop){
+			stop_mutex.unlock();
+			 continue;
+		}
+		stop_mutex.unlock();
+
 		// Fork and child process will execute ffmpeg command
 		if (!(pid=fork())) {
+			proc_mutex.lock();
+			ffmpeg_proc = getpid();
+			proc_mutex.unlock();
+
 			int out_file = open("ffmpeg.log",O_RDWR|O_CREAT|O_TRUNC,0666);
 			if(out_file < 0){
 				capture->error("Error opening ffmpeg.log");
@@ -255,9 +283,6 @@ void ffmpeg_process_manager(int t, int mode, string name){
 			}
 			exit(0);
 		} else {
-			proc_mutex.lock();
-			ffmpeg_proc = pid;
-			proc_mutex.unlock();
 
 			wait(&status);
 
@@ -267,11 +292,16 @@ void ffmpeg_process_manager(int t, int mode, string name){
 
 			capture->info("Recording complete");
 
+			// Check that the process was terminated by a signal
+			// Assume if so that it was capture control
+			// And so do not update recorded time or stop
+			if (WIFSIGNALED(status)) continue;
+
 			
-			// Check that the process exited with a status
-			if(WIFEXITED(status)){
+			// Check that the process exited normally
+			if (WIFEXITED(status)){
 				// Check whether there was an error
-				if(WEXITSTATUS(status) > 0){
+				if (WEXITSTATUS(status) > 0){
 					capture->warn("Ffmpeg returned with an error, stopping recording");
 					capture->warn("Run ffmpeg natively to debug");
 					stop_mutex.lock();
@@ -279,18 +309,19 @@ void ffmpeg_process_manager(int t, int mode, string name){
 					stop_mutex.unlock();
 				}
 
-				// If in mode == 1 with total time set
-				// must track total recorded mins
-				if(mode){
-					if(total_t){
-						recorded_t += t;
-						if(recorded_t >= total_t){
-							capture->info("Experiment completed, stopping recording");
-		
-							stop_mutex.lock();
-							stop = 1;
-							stop_mutex.unlock();
-						}
+				// If in mode 1 
+				// must track total recorded time
+				if (mode){
+					recorded_time += video_time;
+					if (recorded_time >= experiment_time){
+						capture->info("Experiment completed, stopping recording");
+	
+						session_number = 0;
+						recorded_time = 0;
+ 
+						stop_mutex.lock();
+						stop = 1;
+						stop_mutex.unlock();
 					}
 				}
 			}
@@ -301,100 +332,89 @@ void ffmpeg_process_manager(int t, int mode, string name){
 
 
 int main(int argc, char *argv[]){
-	int t = DEFAULT_time;
+	int video_time = DEFAULT_video_time;
+	int experiment_time = DEFAULT_experiment_time;
 	
-	// mode = 0 means to record at all times without session title
+	// mode = 0 means to record at all video_times without session title
 	// mode = 1 means to wait until session title has been provided
 	int mode = DEFAULT_mode;
-	int new_t = 0;
-	int new_m = 0;
 	string name = DEFAULT_name;
 	struct stat config_stat;
     	auto capture = spdlog::basic_logger_mt("capture","logs/capture.log");
 
-	// Check if mode was provided
-	if (argc > 1){
-		mode = stoi(argv[1],NULL);
-		new_m = 1;
-		if(mode != 0) mode = 1;
-	}
-
-	// Check if time was provided
-	if (argc > 2){
-		t = stoi(argv[1],NULL);
-		new_t = 1;
-		if(t < 1){
-			capture->warn("time less than one, ignoring input");
-			new_t = 0;
-			t = DEFAULT_time;
-		}
-	}
 
 	capture->info("Starting setup");
 
 
-	int out_file = open("logs/capture.log",O_RDWR|O_CREAT|O_TRUNC,0666);
+	int out_file = open("logs/stdout.log",O_RDWR|O_CREAT|O_TRUNC,0666);
 	if(out_file < 0){
-		capture->error("Error opening capture.log");
+		capture->error("Error opening stdout.log");
 		exit(1);
 	}
 
 	
 	if(dup2(out_file,STDOUT_FILENO) < 0){
-		capture->error("Error using dup2 to redirect stdout to capture.log");
+		capture->error("Error using dup2 to redirect stdout to stdout.log");
 		exit(1);
 	}
 	if(dup2(out_file,STDERR_FILENO) < 0){
-		capture->error("Error using dup2 to redirect stderr to capture.log");
+		capture->error("Error using dup2 to redirect stderr to stdout.log");
 		exit(1);
 	}
 	
 	config_mutex.lock();
 
 
-	// Read mode from config or save to config if new mode provided
-	ConfigPair toSave;
-	toSave.option = "mode"; toSave.value = mode;
-
+	// Read mode from config
 	try {
-		if(new_m)
-			edit_config(toSave); 
-		else
-			mode = stoi(read_config("mode"));
+		mode = stoi(read_config("mode"));
 
 		if(mode != 0) mode = 1;
 
 	} catch (const configOpenException& e){
-		create_config(t);
+		create_config();
 	} catch (const configNotFoundException& e){
 		capture->warn(e.what());
 		capture->info("Adding mode as " + to_string(mode));
-		add_config(toSave);
+		add_config("mode",to_string(mode));
 	} catch (const exception& e){
 		capture->error(e.what());
 		exit(1);
 	}
 
-	// Read time from config or save to config if new one provided
-	toSave.option = "time"; toSave.value = t;
-
+	// Read video_time from config
 	try {
-		if(new_t)
-			edit_config(toSave); 
-		else
-			t = stoi(read_config("time"));
+		video_time = stoi(read_config("video_time"));
 
-		if(t < 1){
-			capture->warn("time in config is less than one, setting to default of " + to_string(DEFAULT_time));
-			t = DEFAULT_time;
-			toSave.value = t;
-			edit_config(toSave);
+		if(video_time < 1){
+			capture->warn("video_time in config is less than one, setting to default of " + to_string(DEFAULT_video_time));
+			video_time = DEFAULT_video_time;
+			edit_config("video_time",to_string(video_time));
 		}
 
 	} catch (const configNotFoundException& e){
 		capture->warn(e.what());
-		capture->info("Adding time as " + to_string(t));
-		add_config(toSave);
+		capture->info("Adding video_time as " + to_string(video_time));
+		add_config("video_time",to_string(video_time));
+	} catch (const exception& e){
+		capture->error(e.what());
+		exit(1);
+	}
+
+	// Read experiment_time from config
+	try {
+		experiment_time = stoi(read_config("experiment_time"));
+
+		if(experiment_time < video_time){
+			capture->warn("experiment_time in config is less than video_time, setting to video time");
+			experiment_time = video_time;
+			edit_config("experiment_time",to_string(video_time));
+		}
+
+	} catch (const configNotFoundException& e){
+		capture->warn(e.what());
+		capture->info("Adding video_time as video_time of " + to_string(video_time));
+		add_config("experiment_time", to_string(video_time));
 	} catch (const exception& e){
 		capture->error(e.what());
 		exit(1);
@@ -405,29 +425,24 @@ int main(int argc, char *argv[]){
 		name = read_config("name");
 	} catch (const configNotFoundException& e){
 		capture->warn(e.what());
-		capture->info("Adding name as default of " + string(DEFAULT_name));
-		add_config(toSave);
+		capture->info("Adding name as " + string(name));
+		add_config("name",name);
 	} catch (const exception& e){
 		capture->error(e.what());
 		exit(1);
 	}
-	// Save pid in config such that signals can easily be sent
-	toSave.option = "pid"; toSave.value = getpid();
 
+	// Save pid in config such that signals can easily be sent
 	try {
-		edit_config(toSave); 
+		edit_config("pid",to_string(getpid())); 
 	} catch (const configNotFoundException& e){
-		add_config(toSave);
+		add_config("pid",to_string(getpid()));
 	} catch (const exception& e){
 		capture->error(e.what());
 		exit(1);
 	}
 
 	config_mutex.unlock();
-
-//	if (setup_camera() < 0) {
-//		capture->warn("Could not setup camera correctly");
-//	}
 
 
 	// Set to catch user signals
@@ -438,9 +453,10 @@ int main(int argc, char *argv[]){
 		capture->error("Error setting USRSIG1");
 
 	// Convert time to seconds
-	t *= 60;
+	video_time *= 60;
+	experiment_time *= 60;
 
-	// Check time config file was last modified
+	// Check video_time config file was last modified
 	if(stat(CONFIG,&config_stat)<0){
 		capture->error("Error using stat to check last access of config file");
 		exit(1);
@@ -456,9 +472,9 @@ int main(int argc, char *argv[]){
 
 	capture->info("Setup complete, starting ffmpeg_process_manager thread");
 
-	thread manager(ffmpeg_process_manager,t,mode,name);
+	thread manager(ffmpeg_process_manager,video_time,mode,name, experiment_time);
 
-	// Posibly do things here relating to image processing
+	// Space here for extensions od functionality`
 
 	manager.join();
 	

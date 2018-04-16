@@ -10,9 +10,14 @@
 using namespace std;
 
 int main(){
-	pid_t proc = (pid_t)read_config("pid");
+	try {
+		pid_t proc = (pid_t)stoi(read_config("pid"));
+	
+		kill(proc,SIGUSR2);
+	} catch (const exception& e){
+		cout << e.what() << endl;
+		exit(1);
+	} 
 
-	kill(proc,SIGUSR2);
-
-	return(1);
+	exit(0);
 }

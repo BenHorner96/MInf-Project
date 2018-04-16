@@ -19,30 +19,30 @@ std::ostream& operator<<(std::ostream& os, const ConfigPair& setting){
 	return os;
 }
 
-void create_config(int t){
+void create_config(){
 	fstream cf;
 	
 	cf.open(CONFIG,fstream::out);
 
 	if(cf){
-		cf << "mode\t0" << endl;
-		cf << "time\t" << t << endl;
-		cf << "name\tNONE" << endl;
-		cf << "total_t\t0" << endl;
-		cf << "brightness\t0" << endl;
-		cf << "contrast\t32" << endl;
-		cf << "saturation\t64" << endl;
-		cf << "hue\t0" << endl;
-		cf << "white_balance_temperature_auto\t1" << endl;
-		cf << "gamma\t0" << endl;
-		cf << "gain\t0" << endl;
-		cf << "power_line_frequency\t1" << endl;
-		cf << "white_balance_temperature\t4600" << endl;
-		cf << "sharpness\t3" << endl;
-		cf << "backlight_compensation\t1" << endl;
-		cf << "exposure_auto\t3" << endl;
-		cf << "exposure_absolute\t156" << endl;
-		cf << "exposure_auto_priority\t0" << endl;
+		cf << "mode\t" 				 << DEFAULT_mode << endl;
+		cf << "video_time\t" 			 << DEFAULT_video_time << endl;
+		cf << "name\t" 				 << DEFAULT_name << endl;
+		cf << "experiment_time\t" 		 << DEFAULT_experiment_time<< endl;
+		cf << "brightness\t" 			 << DEFAULT_brightness<< endl;
+		cf << "contrast\t" 			 << DEFAULT_contrast<< endl;
+		cf << "saturation\t" 			 << DEFAULT_saturation<< endl;
+		cf << "hue\t" 				 << DEFAULT_hue<< endl;
+		cf << "white_balance_temperature_auto\t" << DEFAULT_white_balance_temperature_auto<< endl;
+		cf << "gamma\t" 			 << DEFAULT_gamma<< endl;
+		cf << "gain\t" 				 << DEFAULT_gain<< endl;
+		cf << "power_line_frequency\t" 		 << DEFAULT_power_line_frequency<< endl;
+		cf << "white_balance_temperature\t"	 << DEFAULT_white_balance_temperature<< endl;
+		cf << "sharpness\t" 			 << DEFAULT_sharpness<< endl;
+		cf << "backlight_compensation\t" 	 << DEFAULT_backlight_compensation<< endl;
+		cf << "exposure_auto\t" 		 << DEFAULT_exposure_auto<< endl;
+		cf << "exposure_absolute\t" 		 << DEFAULT_exposure_absolute<< endl;
+		cf << "exposure_auto_priority\t" 	 << DEFAULT_exposure_auto_priority<< endl;
 	} else {
 		throw configOpenException();
 	}	
@@ -52,7 +52,10 @@ void create_config(int t){
 	return;
 }
 
-void edit_config(ConfigPair setting){
+void edit_config(string option, string value){
+
+	ConfigPair setting;
+	setting.option = option; setting.value = value;
 	vector<ConfigPair> v;
 	int found = 0;	
 	
@@ -90,7 +93,10 @@ void edit_config(ConfigPair setting){
 	return;
 }
 
-void add_config(ConfigPair setting){
+void add_config(string option, string value){
+	ConfigPair setting;
+	setting.option = option; setting.value = value;
+
 	fstream cf;
 	
 	cf.open(CONFIG,fstream::app);
