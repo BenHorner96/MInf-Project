@@ -113,7 +113,7 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 					video_time = stoi(read_config("video_time")) * 60;
 					mode = stoi(read_config("mode"));
 					name = read_config("name");
-					experiment_time = stoi(read_config("experiment_time"));
+					experiment_time = stoi(read_config("experiment_time")) * 60;
 
 
 				} catch (const configNotFoundException& e){
@@ -172,7 +172,6 @@ void ffmpeg_process_manager(int video_time, int mode, string name, int experimen
 
 				ffmpeg_cmd[9] = ffmpeg_cmd[12] = to_string(video_time);
 
-				experiment_time *= 60;
 
 				if (experiment_time < video_time){
 					capture->warn("experiment_time in config is less than video_time, setting to video_time");
